@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Variant-Drug Knowledge Graph</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      background: #111827;
+      border-right: 1px solid #1f2937;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .sidebar h1 {
+      font-size: 20px;
+      margin: 0 0 14px 0;
+      color: #ffffff;
+    }
+
+    .sidebar h2 {
+      font-size: 14px;
+      margin: 18px 0 8px 0;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .control-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: #d1d5db;
+    }
+
+    input[type="text"],
+    select,
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #1f2937;
+      color: #f9fafb;
+      font-size: 14px;
+      outline: none;
+    }
+
+    input[type="text"]::placeholder {
+      color: #94a3b8;
+    }
+
+    input[type="text"]:focus,
+    select:focus {
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.12);
+    }
+
+    button {
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+
+    button:hover {
+      background: #273449;
+    }
+
+    .stats,
+    .details {
+      background: #0b1220;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+
+    .stats div,
+    .details div {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .details-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    .small-note {
+      font-size: 12px;
+      color: #93c5fd;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .main {
+      position: relative;
+      background: #020617;
+      overflow: hidden;
+    }
+
+    #graph {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .graph-title {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      z-index: 10;
+      color: #e5e7eb;
+    }
+
+    .legend {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      z-index: 10;
+      color: #e5e7eb;
+      min-width: 180px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .message {
+      position: absolute;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #cbd5e1;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.98);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px;
+      color: #f8fafc;
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 380px;
+      opacity: 0;
+      transition: opacity 0.1s ease;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .tooltip strong {
+      color: #ffffff;
+    }
+
+    .center-status {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #cbd5e1;
+      font-size: 16px;
+      z-index: 1;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Variant-Drug</h1>
+
+      <h2>Search</h2>
+
+      <div class="control-group">
+        <label for="searchNode">Search variant, drug, or gene symbol</label>
+        <input
+          id="searchNode"
+          type="text"
+          list="nodeSuggestions"
+          placeholder="Example: rs4291, captopril, ACE"
+        />
+        <datalist id="nodeSuggestions"></datalist>
+      </div>
+
+      <h2>Filters</h2>
+
+      <div class="control-group">
+        <label for="loeFilter">Level of Evidence</label>
+        <select id="loeFilter">
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="phenotypeCategoryFilter">Phenotype Category</label>
+        <select id="phenotypeCategoryFilter">
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="maxNodes">Max Nodes to Render</label>
+        <select id="maxNodes">
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="150">150</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+          <option value="5000">5000</option>
+          <option value="10000">10000</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <button id="resetBtn">Reset</button>
+      </div>
+
+      <div class="stats">
+        <div><strong>Raw nodes:</strong> <span id="rawNodes">0</span></div>
+        <div><strong>Raw edges:</strong> <span id="rawEdges">0</span></div>
+        <div><strong>Visible nodes:</strong> <span id="visibleNodes">0</span></div>
+        <div><strong>Visible edges:</strong> <span id="visibleEdges">0</span></div>
+      </div>
+
+      <div class="details">
+        <div class="details-title">Details</div>
+        <div id="detailsContent">Hover or click a node/edge to see details.</div>
+      </div>
+
+    </aside>
+
+    <main class="main">
+      <div class="graph-title">Variant-Drug Knowledge Graph</div>
+
+      <div class="legend">
+        <div class="legend-row">
+          <span class="legend-dot" style="background:#a855f7;"></span>
+          <span>Variant node</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot" style="background:#60a5fa;"></span>
+          <span>Drug node</span>
+        </div>
+        <div class="legend-row">
+          <span style="display:inline-block;width:12px;height:2px;background:#64748b;"></span>
+          <span>Variant–drug edge</span>
+        </div>
+      </div>
+
+      <div id="message" class="message">Loading graph...</div>
+      <div id="centerStatus" class="center-status">Loading variant–drug graph...</div>
+      <svg id="graph"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      rawGraph: null,
+      filteredGraph: null,
+      selectedNodeId: null,
+      simulation: null,
+      zoomLayer: null
+    };
+
+    const svg = d3.select("#graph");
+    const tooltip = d3.select("#tooltip");
+
+    const searchNodeEl = document.getElementById("searchNode");
+    const nodeSuggestionsEl = document.getElementById("nodeSuggestions");
+    const loeFilterEl = document.getElementById("loeFilter");
+    const phenotypeCategoryFilterEl = document.getElementById("phenotypeCategoryFilter");
+    const maxNodesEl = document.getElementById("maxNodes");
+    const resetBtn = document.getElementById("resetBtn");
+
+    const rawNodesEl = document.getElementById("rawNodes");
+    const rawEdgesEl = document.getElementById("rawEdges");
+    const visibleNodesEl = document.getElementById("visibleNodes");
+    const visibleEdgesEl = document.getElementById("visibleEdges");
+    const detailsContentEl = document.getElementById("detailsContent");
+    const messageEl = document.getElementById("message");
+    const centerStatusEl = document.getElementById("centerStatus");
+
+    function getGraphSize() {
+      const rect = document.querySelector(".main").getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height
+      };
+    }
+
+    function safeValue(value) {
+      if (value === null || value === undefined || value === "") return "N/A";
+      if (Array.isArray(value)) return value.length ? value.join(", ") : "N/A";
+      return String(value);
+    }
+
+    function normalizeMissing(value) {
+      if (value === null || value === undefined) return null;
+      const text = String(value).trim();
+      if (text === "" || text.toLowerCase() === "nan") return null;
+      return text;
+    }
+
+    function formatNumber(value) {
+      if (value === null || value === undefined || Number.isNaN(value)) return "N/A";
+      return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function uniqueSorted(values) {
+      return Array.from(
+        new Set(values.filter(v => v !== null && v !== undefined && String(v).trim() !== ""))
+      ).sort((a, b) => String(a).localeCompare(String(b)));
+    }
+
+    function normalizeGraph(graph) {
+      const nodes = (graph.nodes || []).map(n => ({
+        ...n,
+        id: String(n.id),
+        label: n.label || n.name || n.id,
+        type: n.type || n.node_type || "unknown",
+        gene_symbol: normalizeMissing(n.gene_symbol)
+      }));
+
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+      const edges = (graph.edges || graph.links || []).map((e, i) => ({
+        id: e.id || `edge_${i}`,
+        source: typeof e.source === "object" ? String(e.source.id) : String(e.source),
+        target: typeof e.target === "object" ? String(e.target.id) : String(e.target),
+        source_type: normalizeMissing(e.source_type),
+        target_type: normalizeMissing(e.target_type),
+        gene_symbol: normalizeMissing(e.gene_symbol),
+        pharmgkb_annotation_id: normalizeMissing(e.pharmgkb_annotation_id),
+        level_of_evidence: normalizeMissing(e.level_of_evidence),
+        evidence_score:
+          e.evidence_score === null ||
+          e.evidence_score === undefined ||
+          e.evidence_score === "" ||
+          String(e.evidence_score).toLowerCase() === "nan"
+            ? null
+            : Number(e.evidence_score),
+        phenotype_category: normalizeMissing(e.phenotype_category),
+        phenotypes: normalizeMissing(e.phenotypes),
+        pmid_count:
+          e.pmid_count === null ||
+          e.pmid_count === undefined ||
+          e.pmid_count === "" ||
+          String(e.pmid_count).toLowerCase() === "nan"
+            ? null
+            : Number(e.pmid_count),
+        evidence_count:
+          e.evidence_count === null ||
+          e.evidence_count === undefined ||
+          e.evidence_count === "" ||
+          String(e.evidence_count).toLowerCase() === "nan"
+            ? null
+            : Number(e.evidence_count),
+        specialty_population: normalizeMissing(e.specialty_population),
+        last_updated: normalizeMissing(e.last_updated)
+      })).filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
+
+      return { nodes, edges };
+    }
+
+    function populateNodeSuggestions() {
+      if (!state.rawGraph) return;
+
+      nodeSuggestionsEl.innerHTML = "";
+      const suggestions = [];
+
+      state.rawGraph.nodes.forEach(node => {
+        suggestions.push(node.label);
+        if (node.gene_symbol) suggestions.push(node.gene_symbol);
+      });
+
+      uniqueSorted(suggestions).slice(0, 4000).forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        nodeSuggestionsEl.appendChild(option);
+      });
+    }
+
+    function populateFilters() {
+      if (!state.rawGraph) return;
+
+      const loeValues = uniqueSorted(state.rawGraph.edges.map(e => e.level_of_evidence));
+      const phenotypeCategoryValues = uniqueSorted(
+        state.rawGraph.edges.map(e => e.phenotype_category)
+      );
+
+      loeFilterEl.innerHTML = `<option value="all">All</option>`;
+      phenotypeCategoryFilterEl.innerHTML = `<option value="all">All</option>`;
+
+      loeValues.forEach(v => {
+        const option = document.createElement("option");
+        option.value = v;
+        option.textContent = v;
+        loeFilterEl.appendChild(option);
+      });
+
+      phenotypeCategoryValues.forEach(v => {
+        const option = document.createElement("option");
+        option.value = v;
+        option.textContent = v;
+        phenotypeCategoryFilterEl.appendChild(option);
+      });
+    }
+
+    function loadGraph(graph) {
+      state.rawGraph = normalizeGraph(graph);
+      state.selectedNodeId = null;
+
+      rawNodesEl.textContent = state.rawGraph.nodes.length;
+      rawEdgesEl.textContent = state.rawGraph.edges.length;
+
+      populateNodeSuggestions();
+      populateFilters();
+      applyFilters();
+
+      centerStatusEl.style.display = "none";
+      setMessage("Graph loaded successfully.");
+    }
+
+    function applyFilters() {
+      if (!state.rawGraph) return;
+
+      const searchKeyword = searchNodeEl.value.trim().toLowerCase();
+      const selectedLoe = loeFilterEl.value;
+      const selectedPhenotypeCategory = phenotypeCategoryFilterEl.value;
+      const maxNodes = Number(maxNodesEl.value);
+
+      const nodeMap = new Map(state.rawGraph.nodes.map(n => [n.id, n]));
+
+      let edges = state.rawGraph.edges.filter(edge => {
+        const loeOk = selectedLoe === "all" || edge.level_of_evidence === selectedLoe;
+        const phenotypeCategoryOk =
+          selectedPhenotypeCategory === "all" ||
+          edge.phenotype_category === selectedPhenotypeCategory;
+        return loeOk && phenotypeCategoryOk;
+      });
+
+      let nodes = [];
+      let allowedNodeIds = new Set();
+
+      if (state.selectedNodeId && nodeMap.has(state.selectedNodeId)) {
+        const focusId = state.selectedNodeId;
+
+        const neighborEdges = edges.filter(
+          e => e.source === focusId || e.target === focusId
+        );
+
+        allowedNodeIds = new Set([focusId]);
+        neighborEdges.forEach(e => {
+          allowedNodeIds.add(e.source);
+          allowedNodeIds.add(e.target);
+        });
+
+        edges = neighborEdges;
+        nodes = state.rawGraph.nodes.filter(n => allowedNodeIds.has(n.id));
+      } else if (searchKeyword) {
+        const matchedNodes = state.rawGraph.nodes.filter(node => {
+          const label = String(node.label || "").toLowerCase();
+          const id = String(node.id || "").toLowerCase();
+          const geneSymbol = String(node.gene_symbol || "").toLowerCase();
+
+          return (
+            label.includes(searchKeyword) ||
+            id.includes(searchKeyword) ||
+            geneSymbol.includes(searchKeyword)
+          );
+        });
+
+        if (matchedNodes.length === 0) {
+          nodes = [];
+          edges = [];
+        } else {
+          const matchedIds = new Set(matchedNodes.map(n => n.id));
+          allowedNodeIds = new Set(matchedIds);
+
+          edges.forEach(edge => {
+            if (matchedIds.has(edge.source)) allowedNodeIds.add(edge.target);
+            if (matchedIds.has(edge.target)) allowedNodeIds.add(edge.source);
+          });
+
+          nodes = state.rawGraph.nodes.filter(n => allowedNodeIds.has(n.id));
+          edges = edges.filter(
+            e => allowedNodeIds.has(e.source) && allowedNodeIds.has(e.target)
+          );
+        }
+      } else {
+        edges.forEach(edge => {
+          allowedNodeIds.add(edge.source);
+          allowedNodeIds.add(edge.target);
+        });
+        nodes = state.rawGraph.nodes.filter(n => allowedNodeIds.has(n.id));
+      }
+
+      if (nodes.length > maxNodes) {
+        const degreeMap = new Map();
+        nodes.forEach(n => degreeMap.set(n.id, 0));
+        edges.forEach(e => {
+          degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+          degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+        });
+
+        const sortedNodes = [...nodes].sort((a, b) => {
+          const degreeDiff =
+            (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0);
+          if (degreeDiff !== 0) return degreeDiff;
+          return a.label.localeCompare(b.label);
+        });
+
+        const keepIds = new Set();
+
+        if (state.selectedNodeId && nodeMap.has(state.selectedNodeId)) {
+          keepIds.add(state.selectedNodeId);
+        }
+
+        for (const node of sortedNodes) {
+          if (keepIds.size >= maxNodes) break;
+          keepIds.add(node.id);
+        }
+
+        nodes = nodes.filter(n => keepIds.has(n.id));
+        edges = edges.filter(e => keepIds.has(e.source) && keepIds.has(e.target));
+      }
+
+      const visibleDegreeMap = new Map();
+      nodes.forEach(n => visibleDegreeMap.set(n.id, 0));
+      edges.forEach(e => {
+        visibleDegreeMap.set(e.source, (visibleDegreeMap.get(e.source) || 0) + 1);
+        visibleDegreeMap.set(e.target, (visibleDegreeMap.get(e.target) || 0) + 1);
+      });
+
+      const finalNodes = nodes.map(n => ({
+        ...n,
+        degree: visibleDegreeMap.get(n.id) || 0
+      }));
+
+      state.filteredGraph = { nodes: finalNodes, edges };
+
+      visibleNodesEl.textContent = finalNodes.length;
+      visibleEdgesEl.textContent = edges.length;
+
+      if (finalNodes.length === 0) {
+        centerStatusEl.style.display = "flex";
+        centerStatusEl.textContent = "No nodes match the current filters.";
+      } else {
+        centerStatusEl.style.display = "none";
+      }
+
+      drawGraph();
+    }
+
+    function drawGraph() {
+      const { width, height } = getGraphSize();
+
+      svg.selectAll("*").remove();
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+      const zoomLayer = svg.append("g");
+      state.zoomLayer = zoomLayer;
+
+      const zoom = d3.zoom()
+        .scaleExtent([0.2, 4])
+        .on("zoom", (event) => {
+          zoomLayer.attr("transform", event.transform);
+        });
+
+      svg.call(zoom);
+
+      if (!state.filteredGraph || state.filteredGraph.nodes.length === 0) {
+        return;
+      }
+
+      const nodes = state.filteredGraph.nodes.map(n => ({ ...n }));
+      const edges = state.filteredGraph.edges.map(e => ({ ...e }));
+
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+      function getNodeFromEndpoint(endpoint) {
+        if (!endpoint) return null;
+        if (typeof endpoint === "object") return endpoint;
+        return nodeMap.get(String(endpoint)) || null;
+      }
+
+      const edge = zoomLayer
+        .append("g")
+        .attr("stroke", "#64748b")
+        .attr("stroke-opacity", 0.65)
+        .selectAll("line")
+        .data(edges)
+        .join("line")
+        .attr("stroke-width", d => {
+          const s = d.evidence_score;
+          if (s === null || Number.isNaN(s)) return 1.2;
+          return Math.max(1.2, Math.min(5, 1 + Math.log10(Math.abs(s) + 1)));
+        })
+        .on("mouseover", function(event, d) {
+          d3.select(this)
+            .attr("stroke", "#cbd5e1")
+            .attr("stroke-width", 3);
+
+          const sourceNode = getNodeFromEndpoint(d.source);
+          const targetNode = getNodeFromEndpoint(d.target);
+
+          const sourceLabel = safeValue(sourceNode?.label);
+          const targetLabel = safeValue(targetNode?.label);
+          const sourceType = String(sourceNode?.type || sourceNode?.node_type || "").toLowerCase();
+          const targetType = String(targetNode?.type || targetNode?.node_type || "").toLowerCase();
+
+          const variantName = sourceType === "variant"
+            ? sourceLabel
+            : (targetType === "variant" ? targetLabel : "N/A");
+
+          const drugName = sourceType === "drug"
+            ? sourceLabel
+            : (targetType === "drug" ? targetLabel : "N/A");
+
+          showTooltip(event, `
+            <strong>Annotation</strong><br>
+            Variant: ${variantName}<br>
+            Gene: ${safeValue(d.gene_symbol)}<br>
+            Drug: ${drugName}<br>
+            Level of Evidence: ${safeValue(d.level_of_evidence)}<br>
+            Evidence Score: ${formatNumber(d.evidence_score)}<br>
+            Phenotype Category: ${safeValue(d.phenotype_category)}<br>
+            Phenotypes: ${safeValue(d.phenotypes)}<br>
+            PMID Count: ${formatNumber(d.pmid_count)}<br>
+            Evidence Count: ${formatNumber(d.evidence_count)}<br>
+            PharmGKB Annotation ID: ${safeValue(d.pharmgkb_annotation_id)}<br>
+            Last Updated: ${safeValue(d.last_updated)}
+          `);
+
+          detailsContentEl.innerHTML = `
+            <div><strong>Variant:</strong> ${variantName}</div>
+            <div><strong>Gene:</strong> ${safeValue(d.gene_symbol)}</div>
+            <div><strong>Drug:</strong> ${drugName}</div>
+            <div><strong>Level of Evidence:</strong> ${safeValue(d.level_of_evidence)}</div>
+            <div><strong>Evidence Score:</strong> ${formatNumber(d.evidence_score)}</div>
+            <div><strong>Phenotype Category:</strong> ${safeValue(d.phenotype_category)}</div>
+            <div><strong>Phenotypes:</strong> ${safeValue(d.phenotypes)}</div>
+            <div><strong>PMID Count:</strong> ${formatNumber(d.pmid_count)}</div>
+            <div><strong>Evidence Count:</strong> ${formatNumber(d.evidence_count)}</div>
+            <div><strong>PharmGKB Annotation ID:</strong> ${safeValue(d.pharmgkb_annotation_id)}</div>
+            <div><strong>Last Updated:</strong> ${safeValue(d.last_updated)}</div>
+          `;
+        })
+        .on("mousemove", moveTooltip)
+        .on("mouseout", function(event, d) {
+          d3.select(this)
+            .attr("stroke", "#64748b")
+            .attr("stroke-width", (() => {
+              const s = d.evidence_score;
+              if (s === null || Number.isNaN(s)) return 1.2;
+              return Math.max(1.2, Math.min(5, 1 + Math.log10(Math.abs(s) + 1)));
+            })());
+
+          hideTooltip();
+        });
+
+      function getNodeColor(node) {
+        if (node.type === "variant") return "#a855f7";
+        if (node.type === "drug") return "#60a5fa";
+        return "#94a3b8";
+      }
+
+      function getNodeRadius(node) {
+        return Math.max(7, Math.min(18, 7 + node.degree * 0.4));
+      }
+
+      const node = zoomLayer
+        .append("g")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .style("cursor", "pointer")
+        .call(dragBehavior());
+
+      node.append("circle")
+        .attr("r", d => getNodeRadius(d))
+        .attr("fill", d => getNodeColor(d))
+        .attr("stroke", d => d.id === state.selectedNodeId ? "#ffffff" : "#0f172a")
+        .attr("stroke-width", d => d.id === state.selectedNodeId ? 3 : 1.5)
+        .on("mouseover", function(event, d) {
+          d3.select(this)
+            .attr("stroke", "#ffffff")
+            .attr("stroke-width", 2.5);
+
+          showTooltip(event, `
+            <strong>${safeValue(d.label)}</strong><br>
+            Type: ${safeValue(d.type)}<br>
+            Gene Symbol: ${safeValue(d.gene_symbol)}<br>
+            Degree: ${safeValue(d.degree)}
+          `);
+
+          detailsContentEl.innerHTML = `
+            <div><strong>Label:</strong> ${safeValue(d.label)}</div>
+            <div><strong>Type:</strong> ${safeValue(d.type)}</div>
+            <div><strong>Gene Symbol:</strong> ${safeValue(d.gene_symbol)}</div>
+            <div><strong>Degree:</strong> ${safeValue(d.degree)}</div>
+          `;
+        })
+        .on("mousemove", moveTooltip)
+        .on("mouseout", function(event, d) {
+          d3.select(this)
+            .attr("stroke", d.id === state.selectedNodeId ? "#ffffff" : "#0f172a")
+            .attr("stroke-width", d.id === state.selectedNodeId ? 3 : 1.5);
+
+          hideTooltip();
+        })
+        .on("click", function(event, d) {
+          state.selectedNodeId = d.id;
+          searchNodeEl.value = d.label;
+          applyFilters();
+          setMessage(`Focused on: ${d.label}`);
+        });
+
+      node.append("text")
+        .text(d => d.label)
+        .attr("fill", "#ffffff")
+        .attr("font-size", "11px")
+        .attr("font-weight", 500)
+        .attr("dx", d => getNodeRadius(d) + 4)
+        .attr("dy", 4)
+        .style("pointer-events", "none");
+
+      state.simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(edges)
+          .id(d => d.id)
+          .distance(95)
+          .strength(0.22))
+        .force("charge", d3.forceManyBody().strength(-250))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide().radius(d => getNodeRadius(d) + 18))
+        .on("tick", ticked);
+
+      function ticked() {
+        edge
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        node.attr("transform", d => `translate(${d.x},${d.y})`);
+      }
+
+      function dragBehavior() {
+        return d3.drag()
+          .on("start", (event, d) => {
+            if (!event.active) state.simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+          })
+          .on("drag", (event, d) => {
+            d.fx = event.x;
+            d.fy = event.y;
+          })
+          .on("end", (event, d) => {
+            if (!event.active) state.simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          });
+      }
+    }
+
+    function showTooltip(event, html) {
+      tooltip.style("opacity", 1).html(html);
+      moveTooltip(event);
+    }
+
+    function moveTooltip(event) {
+      tooltip
+        .style("left", `${event.pageX + 14}px`)
+        .style("top", `${event.pageY + 14}px`);
+    }
+
+    function hideTooltip() {
+      tooltip.style("opacity", 0);
+    }
+
+    function setMessage(text) {
+      messageEl.textContent = text;
+    }
+
+    async function loadDefaultJson() {
+      try {
+        setMessage("Loading variant_drug.json...");
+        centerStatusEl.style.display = "flex";
+        centerStatusEl.textContent = "Loading variant-drug graph...";
+
+        const response = await fetch("variant_drug.json");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const graph = await response.json();
+        loadGraph(graph);
+      } catch (error) {
+        setMessage("Could not load variant_drug.json");
+        centerStatusEl.style.display = "flex";
+        centerStatusEl.textContent = "Could not load variant_drug.json. Run local server if needed.";
+        console.error(error);
+      }
+    }
+
+    function resetFilters() {
+      searchNodeEl.value = "";
+      loeFilterEl.value = "all";
+      phenotypeCategoryFilterEl.value = "all";
+      maxNodesEl.value = "100";
+      state.selectedNodeId = null;
+      applyFilters();
+      setMessage("Reset complete.");
+    }
+
+    resetBtn.addEventListener("click", resetFilters);
+
+    searchNodeEl.addEventListener("input", () => {
+      state.selectedNodeId = null;
+      applyFilters();
+    });
+
+    searchNodeEl.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        searchNodeEl.value = "";
+        state.selectedNodeId = null;
+        applyFilters();
+      }
+    });
+
+    loeFilterEl.addEventListener("change", () => {
+      state.selectedNodeId = null;
+      applyFilters();
+    });
+
+    phenotypeCategoryFilterEl.addEventListener("change", () => {
+      state.selectedNodeId = null;
+      applyFilters();
+    });
+
+    maxNodesEl.addEventListener("change", applyFilters);
+
+    window.addEventListener("resize", () => {
+      if (state.filteredGraph) {
+        drawGraph();
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", loadDefaultJson);
+  </script>
+</body>
+</html>
